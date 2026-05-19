@@ -25,7 +25,7 @@ public class ClassMetrics {
     private long ageInDays;               // days from file creation to release date
     private double weightedAge;           // ageInDays weighted by locTouched
 
-    /** Number of code smells reported by SonarCloud for this file at this release. */
+    /** Number of code smells reported by PMD for this file at this release. */
     private int smells;
 
     public ClassMetrics(String releaseName, String className) {

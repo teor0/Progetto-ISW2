@@ -10,6 +10,7 @@ public class CommitMetrics {
 
     private final String commitHash;
     private final String releaseName;
+    private final String filePath;
 
     /** Number of files modified in this commit (change-set size). */
     private int nf;
@@ -26,14 +27,16 @@ public class CommitMetrics {
      */
     private int lt;
 
-    public CommitMetrics(String releaseName, String commitHash) {
-        this.releaseName = releaseName;
-        this.commitHash  = commitHash;
+    public CommitMetrics(String releaseName, String filePath, String commitHash) {
+        this.releaseName=releaseName;
+        this.commitHash=commitHash;
+        this.filePath=filePath;
     }
 
     // ── getters / setters ────────────────────────────────────────────────────
 
     public String getReleaseName() { return releaseName; }
+    public String getFilePath()    { return filePath;    }
     public String getCommitHash()  { return commitHash;  }
 
     public int  getNf()          { return nf; }

@@ -4,10 +4,33 @@ import com.opencsv.CSVWriter;
 import model.ClassMetrics;
 import model.CommitMetrics;
 
-import java.io.*;
-import java.util.*;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Writes class-level and commit-level metrics to a CSV file.
+ *
+ * <h3>Commit-level aggregation</h3>
+ * Each {@link CommitMetrics} record belongs to a (release, filePath) pair.
+ * AVG_NF, AVG_LA, AVG_LD, and AVG_LT are therefore averaged only over the
+ * commits that touched <em>that specific file</em> within its release window —
+ * so each class row gets its own correct per-file averages, not a
+ * release-wide average shared by every class.
+ *
+ * <h3>CSV columns</h3>
+ * Release, FilePath, LOC,
+ * LOC_Added, MAX_LOC_Added, AVG_LOC_Added,
+ * LOC_Touched, NR, NAuth,
+ * Churn, MAX_Churn, AVG_Churn,
+ * ChangeSetSize, MAX_ChangeSet, AVG_ChangeSet,
+ * Age_In_Days, Weighted_Age,
+ * AVG_NF, AVG_LA, AVG_LD, AVG_LT,
+ * Smells, Buggy
+ */
 public class CsvWriter {
 
     private static final String[] HEADER = {
@@ -24,34 +47,34 @@ public class CsvWriter {
             "Buggy"
     };
 
-    /**
-     * Writes the full dataset to {@code path}.
-     *
-     * @param path          output CSV file path
-     * @param classMetrics  all class-level metrics (across all releases)
-     * @param commitMetrics all commit-level metrics (across all releases)
-     */
     public void write(String path,
                       Collection<ClassMetrics>  classMetrics,
                       Collection<CommitMetrics> commitMetrics) throws IOException {
 
-        // Group commit metrics by release so we can look them up per class
-        Map<String, List<CommitMetrics>> commitsByRelease = commitMetrics.stream()
-                .collect(Collectors.groupingBy(CommitMetrics::getReleaseName));
+        /*
+         * Group commit records by (releaseName, filePath).
+         * Key: releaseName + "|" + filePath  — the pipe is safe because
+         * neither field contains a pipe character.
+         */
+        Map<String, List<CommitMetrics>> commitsByClassKey = commitMetrics.stream()
+                .collect(Collectors.groupingBy(
+                        cm -> cm.getReleaseName() + "|" + cm.getFilePath()
+                ));
 
         try (CSVWriter writer = new CSVWriter(new FileWriter(path))) {
             writer.writeNext(HEADER);
 
             for (ClassMetrics cm : classMetrics) {
 
-                List<CommitMetrics> commits = commitsByRelease
-                        .getOrDefault(cm.getReleaseName(), List.of());
+                String key = cm.getReleaseName() + "|" + cm.getClassName();
+                List<CommitMetrics> fileCommits = commitsByClassKey.getOrDefault(key, List.of());
 
-                // Aggregate commit-level metrics over all commits in this release
-                double avgNf = commits.stream().mapToInt(CommitMetrics::getNf).average().orElse(0.0);
-                double avgLa = commits.stream().mapToInt(CommitMetrics::getLa).average().orElse(0.0);
-                double avgLd = commits.stream().mapToInt(CommitMetrics::getLd).average().orElse(0.0);
-                double avgLt = commits.stream().mapToInt(CommitMetrics::getLt).average().orElse(0.0);
+                // Per-file averages — each value is the average over the commits
+                // that specifically touched this file in this release window.
+                double avgNf = fileCommits.stream().mapToInt(CommitMetrics::getNf).average().orElse(0.0);
+                double avgLa = fileCommits.stream().mapToInt(CommitMetrics::getLa).average().orElse(0.0);
+                double avgLd = fileCommits.stream().mapToInt(CommitMetrics::getLd).average().orElse(0.0);
+                double avgLt = fileCommits.stream().mapToInt(CommitMetrics::getLt).average().orElse(0.0);
 
                 writer.writeNext(new String[]{
                         cm.getReleaseName(),
@@ -76,7 +99,7 @@ public class CsvWriter {
                         String.format("%.4f", avgLd),
                         String.format("%.4f", avgLt),
                         String.valueOf(cm.getSmells()),
-                        "no"                           // Buggy – placeholder; set by labelling step
+                        "no"
                 });
             }
         }
