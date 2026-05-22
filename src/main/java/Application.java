@@ -34,11 +34,13 @@ public class Application {
 
     public static void main(String[] args) {
         try(GitService gitService = new GitService(PROJECT_REPOSITORY_PATH);
-            MetricsCollector collector = new MetricsCollector(REPO_PATH);) {
-            List<String> l=JiraService.retrieveFixedBugs();
+            MetricsCollector collector = new MetricsCollector(REPO_PATH)) {
+            //JiraService.retrieveTickets();
+            //System.out.println(l.getFirst());
+            //System.out.println(l.getLast());
             List<Release> releases = gitService.constructReleases(JiraService.retrieveRelease());
             LOGGER.info("Found " + releases.size() + " releases.");
-            List<ClassMetrics> allClassMetrics = new ArrayList<>();
+            /*List<ClassMetrics> allClassMetrics = new ArrayList<>();
             List<CommitMetrics> allCommitMetrics = new ArrayList<>();
             PMDService pmd = new PMDService();
 
@@ -75,7 +77,7 @@ public class Application {
             LOGGER.info("Total commit entries : " + allCommitMetrics.size());
 
             new CsvWriter().write(CSV_FILE, allClassMetrics, allCommitMetrics);
-            LOGGER.info("Dataset written to: " + CSV_FILE);
+            LOGGER.info("Dataset written to: " + CSV_FILE);*/
         }
         catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Pipeline failed", e);

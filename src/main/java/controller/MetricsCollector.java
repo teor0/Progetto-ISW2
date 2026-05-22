@@ -142,7 +142,6 @@ public class MetricsCollector implements Closeable {
                     // ── Emit one CommitMetrics per (release, file, commit) ───
                     CommitMetrics cm = new CommitMetrics(
                             release.getName(), path, commit.getName());
-                    cm.setNf(changeSetSize);
                     cm.setLa(added);
                     cm.setLd(deleted);
                     cm.setLt(lt);

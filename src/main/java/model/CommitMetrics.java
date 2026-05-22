@@ -12,9 +12,6 @@ public class CommitMetrics {
     private final String releaseName;
     private final String filePath;
 
-    /** Number of files modified in this commit (change-set size). */
-    private int nf;
-
     /** Lines added to THIS file in this commit. */
     private int la;
 
@@ -38,9 +35,6 @@ public class CommitMetrics {
     public String getReleaseName() { return releaseName; }
     public String getFilePath()    { return filePath;    }
     public String getCommitHash()  { return commitHash;  }
-
-    public int  getNf()          { return nf; }
-    public void setNf(int nf)    { this.nf = nf; }
 
     public int  getLa()          { return la; }
     public void setLa(int la)    { this.la = la; }

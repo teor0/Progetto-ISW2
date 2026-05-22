@@ -42,7 +42,7 @@ public class CsvWriter {
             "Churn", "MAX_Churn", "AVG_Churn",
             "ChangeSetSize", "MAX_ChangeSet", "AVG_ChangeSet",
             "Age_In_Days", "Weighted_Age",
-            "AVG_NF", "AVG_LA", "AVG_LD", "AVG_LT",
+            "AVG_LA", "AVG_LD", "AVG_LT",
             "Smells",
             "Buggy"
     };
@@ -70,8 +70,7 @@ public class CsvWriter {
                 List<CommitMetrics> fileCommits = commitsByClassKey.getOrDefault(key, List.of());
 
                 // Per-file averages — each value is the average over the commits
-                // that specifically touched this file in this release window.
-                double avgNf = fileCommits.stream().mapToInt(CommitMetrics::getNf).average().orElse(0.0);
+                // that specifically touched this file.
                 double avgLa = fileCommits.stream().mapToInt(CommitMetrics::getLa).average().orElse(0.0);
                 double avgLd = fileCommits.stream().mapToInt(CommitMetrics::getLd).average().orElse(0.0);
                 double avgLt = fileCommits.stream().mapToInt(CommitMetrics::getLt).average().orElse(0.0);
@@ -94,12 +93,11 @@ public class CsvWriter {
                         String.format("%.4f", cm.getAvgChangeSet()),
                         String.valueOf(cm.getAgeInDays()),
                         String.format("%.4f", cm.getWeightedAge()),
-                        String.format("%.4f", avgNf),
                         String.format("%.4f", avgLa),
                         String.format("%.4f", avgLd),
                         String.format("%.4f", avgLt),
                         String.valueOf(cm.getSmells()),
-                        "no"
+                        cm.isBuggy() ? "yes" : "no"
                 });
             }
         }

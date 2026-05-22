@@ -51,7 +51,12 @@ public class JiraService {
             LOGGER.log(Level.INFO, "Versions after trimming: " + list.size());
 
             JsonArray trimmedArray = new JsonArray();
-            list.forEach(trimmedArray::add);
+            for (int i = 0; i < list.size(); i++) {
+                JsonObject obj = list.get(i).deepCopy();
+                obj.addProperty("releaseNumber", i + 1);
+                trimmedArray.add(obj);
+            }
+            //list.forEach(trimmedArray::add);
 
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
             Files.writeString(
@@ -61,11 +66,15 @@ public class JiraService {
             );
 
             List<Release> releases = new ArrayList<>();
-            for (JsonObject obj : list) {
+            for (int i = 0; i < list.size(); i++) {
+                JsonObject obj = list.get(i);
                 String name = obj.get("name").getAsString();
                 LocalDate date = LocalDate.parse(obj.get("releaseDate").getAsString());
-                releases.add(new Release(name, date, null));
+                Release r =new Release(name, date, null,i);
+                r.setReleaseNumber(i + 1);
+                releases.add(r);
             }
+
             return releases;
 
         } catch (Exception e) {
@@ -79,15 +88,15 @@ public class JiraService {
      * resolution=Fixed, handling pagination automatically.
      * Returns a list of issue keys, e.g. ["PROJECT-1234", ...]
      */
-    public static List<String> retrieveFixedBugs() {
-        List<String> issueKeys = new ArrayList<>();
+    public static JsonArray retrieveTickets() {
+        JsonArray allIssues = new JsonArray();
         int startAt = 0;
         final int maxResults = 1000;
         final String jql =
-                "project=" + PROJECT_NAME +
-                        " AND issuetype=Bug" +
+                "project = " + PROJECT_NAME +
+                        " AND issuetype = Bug" +
                         " AND status in (Closed, Resolved)" +
-                        " AND resolution=Fixed";
+                        " AND resolution = Fixed";
 
         try {
             while (true) {
@@ -96,29 +105,89 @@ public class JiraService {
                         .queryString("jql", jql)
                         .queryString("startAt", startAt)
                         .queryString("maxResults", maxResults)
-                        .queryString("fields", "key,status,resolution,issuetype,fixVersions,created,resolutiondate")
+                        .queryString("fields", "key,created,resolutiondate,versions,fixVersions")
                         .header("Accept", "application/json")
                         .asString()
                         .getBody();
 
                 JsonObject json = JsonParser.parseString(response).getAsJsonObject();
-                JsonArray issues = json.getAsJsonArray("issues");
 
+                if (json.has("errorMessages")) {
+                    LOGGER.severe("Jira error: " + json.get("errorMessages"));
+                    break;
+                }
+
+                JsonArray issues = json.getAsJsonArray("issues");
                 if (issues == null || issues.isEmpty()) break;
 
                 for (JsonElement el : issues) {
-                    issueKeys.add(el.getAsJsonObject().get("key").getAsString());
+                    JsonObject raw = el.getAsJsonObject();
+                    JsonObject fields = raw.getAsJsonObject("fields");
+                    JsonObject issue = new JsonObject();
+
+
+                    issue.addProperty("key", raw.get("key").getAsString());
+                    issue.addProperty("created", fields.get("created").getAsString());
+                    JsonElement resolutionDate = fields.get("resolutiondate");
+                    issue.addProperty("resolutiondate",
+                            resolutionDate.isJsonNull() ? null : resolutionDate.getAsString());
+
+
+                    // Affected versions (versions field in Jira)
+                    JsonArray affectedVersions = new JsonArray();
+                    JsonArray rawAffected = fields.getAsJsonArray("versions");
+                    if (rawAffected != null) {
+                        for (JsonElement v : rawAffected) {
+                            affectedVersions.add(
+                                    v.getAsJsonObject().get("name").getAsString()
+                            );
+                        }
+                    }
+                    issue.add("affectedVersions", affectedVersions);
+
+                    // Fix versions
+                    JsonArray fixVersions = new JsonArray();
+                    JsonArray rawFix = fields.getAsJsonArray("fixVersions");
+                    if (rawFix != null) {
+                        for (JsonElement v : rawFix) {
+                            fixVersions.add(
+                                    v.getAsJsonObject().get("name").getAsString()
+                            );
+                        }
+                    }
+                    issue.add("fixVersions", fixVersions);
+
+                    allIssues.add(issue);
                 }
 
                 int total = json.get("total").getAsInt();
+                LOGGER.info("Fetched " + allIssues.size() + " / " + total);
                 startAt += issues.size();
                 if (startAt >= total) break;
             }
-            LOGGER.log(Level.INFO, "Fixed bugs found: " + issueKeys.size());
+
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            Files.writeString(
+                    Paths.get(TICKETS_FILE),
+                    gson.toJson(allIssues),
+                    StandardCharsets.UTF_8
+            );
+            LOGGER.info("Fixed bugs saved: " + allIssues.size());
+
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to retrieve bugs", e);
+            LOGGER.severe("Failed to retrieve bugs: " + e.getMessage());
+            e.printStackTrace();
         }
-        return issueKeys;
+
+        return allIssues;
     }
+
+    private static String getStringSafe(JsonObject obj, String field) {
+        if (obj == null) return null;
+        JsonElement el = obj.get(field);
+        if (el == null || el.isJsonNull()) return null;
+        return el.getAsString();
+    }
+
 
 }

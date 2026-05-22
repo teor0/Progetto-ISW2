@@ -28,6 +28,14 @@ public class ClassMetrics {
     /** Number of code smells reported by PMD for this file at this release. */
     private int smells;
 
+    /**
+     * SZZ-derived label: {@code true} if at least one bug ticket has this
+     * (release, file) pair inside its injected-to-fix window [IV, FV).
+     */
+    private boolean buggy = false;
+
+
+
     public ClassMetrics(String releaseName, String className) {
         this.releaseName = releaseName;
         this.className   = className;
@@ -88,4 +96,8 @@ public class ClassMetrics {
 
     public int  getSmells()              { return smells;        }
     public void setSmells(int v)         { this.smells = v;      }
+
+    public boolean isBuggy()             { return buggy;         }
+    public void    setBuggy(boolean b)   { this.buggy = b;       }
+
 }
