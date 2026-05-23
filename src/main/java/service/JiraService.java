@@ -3,21 +3,18 @@ package service;
 import com.google.gson.*;
 import kong.unirest.core.Unirest;
 import model.Release;
+import model.Ticket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
+
 import static utility.Constants.*;
 
 public class JiraService {
-
-    private static final Logger LOGGER=Logger.getLogger(JiraService.class.getName());
 
     /**
      * Fetches versions from Jira, filters out those without a release date,
@@ -43,12 +40,8 @@ public class JiraService {
             list.sort(Comparator.comparing(o ->
                     LocalDate.parse(o.get("releaseDate").getAsString())));
 
-            LOGGER.log(Level.INFO, "Versions with release date: " + list.size());
-
             int trimmedSize = (int) Math.ceil(list.size() * 0.40) + 1;
             list = list.subList(0, Math.min(trimmedSize, list.size()));
-
-            LOGGER.log(Level.INFO, "Versions after trimming: " + list.size());
 
             JsonArray trimmedArray = new JsonArray();
             for (int i = 0; i < list.size(); i++) {
@@ -78,7 +71,6 @@ public class JiraService {
             return releases;
 
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to retrieve/prepare versions", e);
             return Collections.emptyList();
         }
     }
@@ -86,10 +78,19 @@ public class JiraService {
     /**
      * Fetches all Bug tickets for PROJECT that are Closed/Resolved with
      * resolution=Fixed, handling pagination automatically.
-     * Returns a list of issue keys, e.g. ["PROJECT-1234", ...]
+     * Resolves each ticket's version strings to Release objects and
+     * saves the raw JSON to TICKETS_FILE.
+     *
+     * @param releases chronologically-sorted, numbered release list
+     * @return fully-populated tickets ready for ProportionService and SZZService
      */
-    public static JsonArray retrieveTickets() {
+    public static List<Ticket> retrieveTickets(List<Release> releases) {
+
+        Map<String, Release> releaseByName = releases.stream()
+                .collect(Collectors.toMap(Release::getName, r -> r));
+
         JsonArray allIssues = new JsonArray();
+        List<Ticket> tickets = new ArrayList<>();
         int startAt = 0;
         final int maxResults = 1000;
         final String jql =
@@ -113,7 +114,6 @@ public class JiraService {
                 JsonObject json = JsonParser.parseString(response).getAsJsonObject();
 
                 if (json.has("errorMessages")) {
-                    LOGGER.severe("Jira error: " + json.get("errorMessages"));
                     break;
                 }
 
@@ -123,70 +123,97 @@ public class JiraService {
                 for (JsonElement el : issues) {
                     JsonObject raw = el.getAsJsonObject();
                     JsonObject fields = raw.getAsJsonObject("fields");
+
+                    // ── Build raw JSON record for persistence ────────────────
                     JsonObject issue = new JsonObject();
-
-
                     issue.addProperty("key", raw.get("key").getAsString());
                     issue.addProperty("created", fields.get("created").getAsString());
                     JsonElement resolutionDate = fields.get("resolutiondate");
                     issue.addProperty("resolutiondate",
                             resolutionDate.isJsonNull() ? null : resolutionDate.getAsString());
 
-
-                    // Affected versions (versions field in Jira)
                     JsonArray affectedVersions = new JsonArray();
                     JsonArray rawAffected = fields.getAsJsonArray("versions");
                     if (rawAffected != null) {
-                        for (JsonElement v : rawAffected) {
-                            affectedVersions.add(
-                                    v.getAsJsonObject().get("name").getAsString()
-                            );
-                        }
+                        for (JsonElement v : rawAffected)
+                            affectedVersions.add(v.getAsJsonObject().get("name").getAsString());
                     }
                     issue.add("affectedVersions", affectedVersions);
 
-                    // Fix versions
                     JsonArray fixVersions = new JsonArray();
                     JsonArray rawFix = fields.getAsJsonArray("fixVersions");
                     if (rawFix != null) {
-                        for (JsonElement v : rawFix) {
-                            fixVersions.add(
-                                    v.getAsJsonObject().get("name").getAsString()
-                            );
-                        }
+                        for (JsonElement v : rawFix)
+                            fixVersions.add(v.getAsJsonObject().get("name").getAsString());
                     }
                     issue.add("fixVersions", fixVersions);
-
                     allIssues.add(issue);
+
+                    // ── Build and resolve Ticket object ──────────────────────
+                    Ticket ticket = new Ticket(raw.get("key").getAsString());
+
+                    ticket.setCreationDate(parseDate(fields.get("created").getAsString()));
+
+                    if (!resolutionDate.isJsonNull())
+                        ticket.setResolutionDate(parseDate(resolutionDate.getAsString()));
+
+                    Release fv = firstMatchingRelease(fixVersions, releaseByName);
+                    if (fv == null) continue;   // no usable fix version, skip
+                    ticket.setFixVersion(fv);
+
+                    if (ticket.getCreationDate() != null)
+                        ticket.setOpeningVersion(releaseForDate(ticket.getCreationDate(), releases));
+                    if (ticket.getOpeningVersion() == null) continue;
+
+                    ticket.setInjectedVersion(firstMatchingRelease(affectedVersions, releaseByName));
+                    tickets.add(ticket);
                 }
 
                 int total = json.get("total").getAsInt();
-                LOGGER.info("Fetched " + allIssues.size() + " / " + total);
                 startAt += issues.size();
                 if (startAt >= total) break;
             }
 
+            // Persist raw JSON
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            Files.writeString(
-                    Paths.get(TICKETS_FILE),
-                    gson.toJson(allIssues),
-                    StandardCharsets.UTF_8
-            );
-            LOGGER.info("Fixed bugs saved: " + allIssues.size());
+            Files.writeString(Paths.get(TICKETS_FILE), gson.toJson(allIssues), StandardCharsets.UTF_8);
 
         } catch (Exception e) {
-            LOGGER.severe("Failed to retrieve bugs: " + e.getMessage());
             e.printStackTrace();
         }
 
-        return allIssues;
+        return tickets;
     }
 
-    private static String getStringSafe(JsonObject obj, String field) {
-        if (obj == null) return null;
-        JsonElement el = obj.get(field);
-        if (el == null || el.isJsonNull()) return null;
-        return el.getAsString();
+
+    private static Release firstMatchingRelease(JsonArray versionsArray,
+                                                Map<String, Release> releaseByName) {
+        if (versionsArray == null) return null;
+        for (JsonElement el : versionsArray) {
+            Release r = releaseByName.get(el.getAsString());
+            if (r != null) return r;
+        }
+        return null;
+    }
+
+    private static Release releaseForDate(LocalDate date, List<Release> releases) {
+        Release result = releases.get(0);
+        for (Release r : releases) {
+            if (!r.getReleaseDate().isAfter(date)) result = r;
+            else break;
+        }
+        return result;
+    }
+
+    private static LocalDate parseDate(String raw) {
+        try {
+            return raw.contains("T")
+                    ? LocalDate.parse(raw, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ"))
+                    : LocalDate.parse(raw);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
 

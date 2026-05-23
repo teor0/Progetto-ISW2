@@ -38,10 +38,13 @@ public class PMDService {
      * Each string is a classpath resource understood by PMD's RuleSetLoader.
      */
     private static final String[] DEFAULT_RULESETS = {
+            "category/java/bestpractices.xml",
             "category/java/design.xml",
             "category/java/codestyle.xml",
             "category/java/errorprone.xml",
-            "category/java/bestpractices.xml"
+            "category/java/security.xml",
+            "category/java/multithreading.xml"
+
     };
 
     private final String[] rulesets;
@@ -63,41 +66,26 @@ public class PMDService {
      */
     public Map<String, Integer> analyzeRelease(File repoRoot) {
 
-        LOGGER.info("Running PMD on: " + repoRoot.getAbsolutePath());
-
         PMDConfiguration config = buildConfiguration(repoRoot);
-
         Map<String, Integer> smellsPerFile = new HashMap<>();
-
         try (PmdAnalysis analysis = PmdAnalysis.create(config)) {
-
-            // Add rulesets
             for (String ruleset : rulesets) {
                 analysis.addRuleSet(analysis.newRuleSetLoader().loadFromResource(ruleset));
             }
-
-            // Run and collect the report
             Report report = analysis.performAnalysisAndCollectReport();
-
             String repoRootPath = repoRoot.getAbsolutePath();
-
             for (RuleViolation violation : report.getViolations()) {
-
                 // PMD gives us the absolute path; convert to repo-relative
                 String absPath = violation.getFileId().getAbsolutePath().toString();
                 String relPath = toRelativePath(repoRootPath, absPath);
-
-                // Skip test files (same heuristic as MetricsCollector)
-                if (isTestFile(relPath)) continue;
-
+                if (isTestFile(relPath))
+                    continue;
                 smellsPerFile.merge(relPath, 1, Integer::sum);
             }
-
             LOGGER.info("PMD found " + report.getViolations().size()
                     + " total violations in " + smellsPerFile.size() + " files.");
-
         } catch (Exception e) {
-            LOGGER.severe("PMD analysis failed: " + e.getMessage());
+            e.printStackTrace();
         }
 
         return smellsPerFile;
@@ -140,24 +128,18 @@ public class PMDService {
         if (rel.startsWith(repoRootPath)) {
             rel = rel.substring(repoRootPath.length());
         }
-        // Normalise OS separators to '/'
-        rel = rel.replace(File.separatorChar, '/');
-        // in PMDService.toRelativePath()
         rel = rel.replace(File.separatorChar, '/');
         if (rel.startsWith("/") || rel.startsWith("./"))
             rel = rel.replaceFirst("^[./]+", "");
         return rel;
     }
 
-    //used to exclude test files
     private static boolean isTestFile(String path) {
         String lower = path.toLowerCase(java.util.Locale.ROOT);
         return lower.contains("/test/")
                 || lower.contains("/tests/")
                 || lower.endsWith("test.java")
                 || lower.endsWith("tests.java")
-                || lower.endsWith("testcase.java")
-                || lower.contains("/mock/")
-                || lower.contains("/stub/");
+                || lower.endsWith("testcase.java");
     }
 }

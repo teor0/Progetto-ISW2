@@ -2,6 +2,7 @@ package service;
 
 import com.google.gson.*;
 import model.Release;
+import model.Ticket;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.ObjectId;
@@ -23,10 +24,16 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import static utility.Constants.RELEASES_FILE;
 
 public class GitService implements Closeable {
+
+
+    private static final Logger LOGGER = Logger.getLogger(GitService.class.getName());
+
 
     private final Git git;
     private final Repository repository;
@@ -143,6 +150,51 @@ public class GitService implements Closeable {
         git.checkout()
                 .setName(branchName)
                 .call();
+    }
+
+    /**
+     * Scans the full Git history and associates each commit to the ticket
+     * whose key appears in the commit message.
+     *
+     * @param tickets  fully-resolved ticket list (after ProportionService)
+     */
+    public void linkCommitsToTickets(List<Ticket> tickets) // no boundary parameter
+            throws IOException {
+
+        Map<Pattern, Ticket> patternToTicket = new HashMap<>();
+        for (Ticket t : tickets) {
+            Pattern p = Pattern.compile(
+                    "\\b" + Pattern.quote(t.getIssueId()) + "\\b",
+                    Pattern.CASE_INSENSITIVE
+            );
+            patternToTicket.put(p, t);
+        }
+
+        try (RevWalk revWalk = new RevWalk(repository)) {
+            // Mark ALL refs as start points — branches, tags, everything
+            for (Ref ref : repository.getRefDatabase().getRefs()) {
+                ObjectId id = ref.getPeeledObjectId() != null
+                        ? ref.getPeeledObjectId()
+                        : ref.getObjectId();
+                try {
+                    revWalk.markStart(revWalk.parseCommit(id));
+                } catch (Exception e) {
+                    // ref may not point to a commit (e.g. a tag on a blob)
+                }
+            }
+
+            for (RevCommit commit : revWalk) {
+                String message = commit.getFullMessage();
+                for (Map.Entry<Pattern, Ticket> entry : patternToTicket.entrySet()) {
+                    if (entry.getKey().matcher(message).find()) {
+                        entry.getValue().addCommit(commit);
+                    }
+                }
+            }
+        }
+
+        long linked = tickets.stream().filter(t -> !t.getCommits().isEmpty()).count();
+        LOGGER.info("Linked commits to " + linked + "/" + tickets.size() + " tickets.");
     }
 
 

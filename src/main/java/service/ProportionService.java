@@ -76,7 +76,8 @@ public class ProportionService {
 
         List<Ticket> result =  new ArrayList<>(ticketsList);
         // Keep only tickets with a non-null, non-NULL IV
-        result.removeIf(ticket->ticket.getInjectedVersion().getName().isEmpty());
+        result.removeIf(ticket->ticket.getInjectedVersion() == null
+                || ticket.getInjectedVersion().getName().isEmpty());
         // IV is strictly greater than OV (IV>OV)
         result.removeIf(ticket->ticket.getInjectedVersion().getReleaseNumber()
                 > ticket.getOpeningVersion().getReleaseNumber());

@@ -129,7 +129,7 @@ public class SZZService implements Closeable {
 
         long totalBuggy = classMetricsList.stream().filter(ClassMetrics::isBuggy).count();
         LOGGER.info(String.format(
-                "SZZ labelling complete. Buggy (release, file) pairs: %d / %d  (%.1f%%)",
+                "SZZ labelling complete. Buggy (release, file) pairs: %d / %d  (%.2f%%)",
                 totalBuggy, classMetricsList.size(),
                 classMetricsList.isEmpty() ? 0.0
                         : 100.0 * totalBuggy / classMetricsList.size()));
@@ -241,9 +241,7 @@ public class SZZService implements Closeable {
                 || lower.contains("/tests/")
                 || lower.endsWith("test.java")
                 || lower.endsWith("tests.java")
-                || lower.endsWith("testcase.java")
-                || lower.contains("/mock/")
-                || lower.contains("/stub/");
+                || lower.endsWith("testcase.java");
     }
 
     @Override

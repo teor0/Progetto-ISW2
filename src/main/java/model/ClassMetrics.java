@@ -11,6 +11,7 @@ public class ClassMetrics {
 
     private int loc;                       // lines of code at boundary commit
     private int nr;                        // number of revisions (commits that touched the file)
+    private int nFix;                      // number of defect fixes.
     private int nAuth;                     // number of distinct authors
     private int locAdded;                  // sum of added lines over all revisions
     private int maxLocAdded;               // max added lines in a single revision
@@ -51,6 +52,9 @@ public class ClassMetrics {
 
     public int  getNr()             { return nr;          }
     public void setNr(int nr)       { this.nr = nr;       }
+
+    public int  getNFix()          { return nFix; }
+    public void setNFix(int nFix)  { this.nFix = nFix; }
 
     public int  getNAuth()          { return nAuth;       }
     public void setNAuth(int n)     { this.nAuth = n;     }

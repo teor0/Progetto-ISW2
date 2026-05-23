@@ -52,8 +52,6 @@ import java.util.logging.Logger;
  */
 public class MetricsCollector implements Closeable {
 
-    private static final Logger LOGGER = Logger.getLogger(MetricsCollector.class.getName());
-
     private final Git        git;
     private final Repository repo;
 
@@ -74,22 +72,20 @@ public class MetricsCollector implements Closeable {
     public void collect(Release release,
                         RevCommit  prevBoundary,
                         List<ClassMetrics>  classMetrics,
-                        List<CommitMetrics> commitMetrics)
+                        List<CommitMetrics> commitMetrics,
+                        Set<String> fixCommitHashes)
             throws IOException {
 
         RevCommit boundary = release.getBoundaryCommit();
         if (boundary == null) {
-            LOGGER.warning("Release " + release.getName() + " has no boundary commit – skipping.");
             return;
         }
 
         // ── 1. Enumerate non-test Java files at the boundary snapshot ────────
         Set<String> javaFiles = listNonTestJavaFiles(boundary);
         if (javaFiles.isEmpty()) {
-            LOGGER.info("Release " + release.getName() + ": no Java files found.");
             return;
         }
-        LOGGER.info("Release " + release.getName() + ": " + javaFiles.size() + " Java files.");
 
         Map<String, FileAccumulator> accumulators = new LinkedHashMap<>();
         for (String f : javaFiles) accumulators.put(f, new FileAccumulator());
@@ -127,6 +123,8 @@ public class MetricsCollector implements Closeable {
                     FileAccumulator acc = accumulators.get(path);
                     acc.authors.add(commit.getAuthorIdent().getEmailAddress());
                     acc.nr++;
+                    if (fixCommitHashes.contains(commit.getName()))
+                        acc.nFix++;
                     acc.totalLocAdded   += added;
                     acc.maxLocAdded      = Math.max(acc.maxLocAdded, added);
                     acc.totalLocTouched += added + deleted;
@@ -159,6 +157,7 @@ public class MetricsCollector implements Closeable {
             ClassMetrics cm = new ClassMetrics(release.getName(), path);
             cm.setLoc(countLoc(boundary, path));
             cm.setNr(acc.nr);
+            cm.setNFix(acc.nFix);
             cm.setNAuth(acc.authors.size());
             cm.setLocAdded(acc.totalLocAdded);
             cm.setMaxLocAdded(acc.maxLocAdded);
@@ -202,9 +201,7 @@ public class MetricsCollector implements Closeable {
                 || lower.contains("/tests/")
                 || lower.endsWith("test.java")
                 || lower.endsWith("tests.java")
-                || lower.endsWith("testcase.java")
-                || lower.contains("/mock/")
-                || lower.contains("/stub/");
+                || lower.endsWith("testcase.java");
     }
 
     private List<DiffEntry> diffWithParent(RevCommit commit) {
@@ -214,7 +211,7 @@ public class MetricsCollector implements Closeable {
             AbstractTreeIterator newTree = new RevTreeIter(repo, commit.getTree());
             return df.scan(oldTree, newTree);
         } catch (IOException e) {
-            LOGGER.fine("Could not diff " + commit.getName() + ": " + e.getMessage());
+            e.printStackTrace();
             return null;
         }
     }
@@ -271,6 +268,7 @@ public class MetricsCollector implements Closeable {
     private static class FileAccumulator {
         Set<String> authors      = new HashSet<>();
         int  nr                  = 0;
+        int  nFix                = 0;
         int  totalLocAdded       = 0;
         int  maxLocAdded         = 0;
         int  totalLocTouched     = 0;
